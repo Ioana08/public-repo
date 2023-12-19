@@ -6,6 +6,9 @@ if(isset($_POST['save_task'])){
     
     $title = urlencode($_POST['title']);
 
+
+    
+
     if(isset($_POST['edid'])) { 
         $edid = $_POST['edid'];
         $query = "UPDATE task SET title = '$title' WHERE id = '$edid'";
