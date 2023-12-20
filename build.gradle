@@ -1,0 +1,715 @@
+plugins {
+  id 'java'
+  id 'maven'
+  id 'war'
+  id 'com.github.jacobono.jaxb' version '1.3.5'
+  id 'com.google.protobuf' version '0.8.17'
+  id 'idea'
+  id 'com.github.sherter.google-java-format' version '0.8'
+  id 'eclipse'
+}
+import com.github.sherter.googlejavaformatgradleplugin.GoogleJavaFormat
+import com.github.sherter.googlejavaformatgradleplugin.VerifyGoogleJavaFormat
+
+apply from: "${buildscript.sourceFile.getParent()}/../../../ThrdPrty/gradle/conf/mvn_repos.gradle"
+
+group = 'com.intuit.tto'
+archivesBaseName = 'services'
+
+description = """TTO Web Application"""
+
+def protobufVersion = '3.17.1'
+def grpcVersion = '1.39.0'
+
+sourceCompatibility = 1.8
+targetCompatibility = 1.8
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8'
+}
+
+configurations {
+    jaxb
+    xmlBeans
+    xmlBeans.extendsFrom(jaxb)
+    defaultPricing
+    ajc
+    aspects
+    compile {
+      extendsFrom aspects
+    }
+}
+
+war {
+    rootSpec.exclude('**/*.java')
+}
+
+project.ext {
+  baseSources = "${buildDir}/generated-sources"
+  dataserviceSourcesDir = "${buildDir}/generated-sources/xjc-ds"
+  dataserviceTY10SourcesDir = "${buildDir}/generated-sources/xjc-ds10"
+  eFilingStatusSourcesDir = "${buildDir}/generated-sources/xjc-efilestatus-dp"
+  taxidProtectionSourcesDir = "${buildDir}/generated-sources/xjc-taxidprotection"
+  onlineFASourcesDir = "${buildDir}/generated-sources/xjc-onlinefa"
+  ttoSourcesDir = "${buildDir}/generated-sources/xjc"
+  xmlbeansSourcesDir = "${buildDir}/generated-sources/xml-beans"
+  protoGrpcGeneratedSourcesDir = "${buildDir}/generated/source/proto/main/grpc"
+  protoJavaGeneratedSourcesDir = "${buildDir}/generated/source/proto/main/java"
+  annotationGeneratedSourcesDir = "${buildDir}/generated-sources/annotations"
+}
+
+gradle.taskGraph.whenReady {taskGraph ->
+    println "Tasks"
+    taskGraph.getAllTasks().eachWithIndex{ task, n ->
+        println "${n + 1} $task"
+        task.dependsOn.eachWithIndex{ depObj, m ->
+            println "  ${ m + 1 } $depObj"
+        }
+    }
+}
+
+task genJaxb {
+  ext.classesDir = "${buildDir}/classes/jaxb"
+  ext.genDirs = [dataserviceSourcesDir, dataserviceTY10SourcesDir, eFilingStatusSourcesDir, taxidProtectionSourcesDir, ttoSourcesDir, xmlbeansSourcesDir, onlineFASourcesDir]
+  outputs.dir classesDir
+
+  doLast() {
+    project.ant {
+      // Create output directories
+      mkdir(dir: dataserviceSourcesDir)
+      mkdir(dir: dataserviceTY10SourcesDir)
+      mkdir(dir: eFilingStatusSourcesDir)
+      mkdir(dir: taxidProtectionSourcesDir)
+      mkdir(dir: onlineFASourcesDir)
+      mkdir(dir: ttoSourcesDir)
+      mkdir(dir: xmlbeansSourcesDir)
+
+
+      taskdef name: 'xjc', classname: 'org.jvnet.jaxb2_commons.xjc.XJC2Task', classpath: configurations.jaxb.asPath
+
+      // dataservice-generate
+        System.setProperty('javax.xml.accessExternalSchema', 'file')
+      xjc(destdir: dataserviceSourcesDir, extension: 'true', binding: "${projectDir}/src/main/resources/xsd/jaxb-global-bindings-ds.xjb") {
+        schema(dir: "${projectDir}/src/main/resources/xsd", includes: '**/CG-DS-Comprehensive.xsd')
+
+        arg(value: "-Xannotate")
+        arg(value: "-Xannotate-defaultFieldTarget=setter")
+        produces(dir: dataserviceSourcesDir, includes: '**/*.java')
+      }
+
+      // dataservice-generatety10
+      xjc(destdir: dataserviceTY10SourcesDir, package: 'com.intuit.data_servicesty10', extension: 'true', binding: "${projectDir}/src/main/resources/xsd/jaxb-global-bindings-ds.xjb") {
+        schema(dir: "${projectDir}/src/main/resources/xsd", includes: '**/CG-DS-Comprehensivety10.xsd')
+        arg(value: "-Xannotate")
+        arg(value: "-Xannotate-defaultFieldTarget=setter")
+        produces(dir: dataserviceTY10SourcesDir, includes: '**/*.java')
+      }
+
+      // eFilingStatus-generate
+      xjc(destdir: eFilingStatusSourcesDir, package: 'com.intuit.efilestatus_dp', extension: 'true', binding: "${projectDir}/src/main/resources/xsd/jaxb-global-bindings.xjb") {
+        schema(dir: "${projectDir}/src/main/resources/xsd", includes: '**/eFilingStatus.xsd')
+        arg(value: "-Xannotate")
+        arg(value: "-Xannotate-defaultFieldTarget=setter")
+        produces(dir: eFilingStatusSourcesDir, includes: '**/*.java')
+      }
+
+        // taxidprotection-generate
+      xjc(destdir: taxidProtectionSourcesDir, package: 'com.intuit.taxidprotection', extension: 'true', binding: "${projectDir}/src/main/resources/xsd/jaxb-global-bindings.xjb") {
+        schema(dir: "${projectDir}/src/main/resources/xsd", includes: '**/CSIAPI.xsd')
+        arg(value: "-Xannotate")
+        arg(value: "-Xannotate-defaultFieldTarget=setter")
+        produces(dir: taxidProtectionSourcesDir, includes: '**/*.java')
+      }
+
+      xjc(destdir: onlineFASourcesDir, package: 'com.intuit.onlinefa', extension: 'true', binding: "${projectDir}/src/main/resources/xsd/jaxb-global-bindings.xjb") {
+        schema(dir: "${projectDir}/src/main/resources/xsd", includes: '**/onlinefaschema.xsd')
+        arg(value: "-Xannotate")
+        arg(value: "-Xannotate-defaultFieldTarget=setter")
+        produces(dir: onlineFASourcesDir, includes: '**/*.java')
+      }
+
+        // tto-generate
+      xjc(destdir: ttoSourcesDir, extension: 'true', binding: "${projectDir}/src/main/resources/xsd/jaxb-global-bindings.xjb") {
+        schema(dir: "${projectDir}/src/main/resources/xsd", includes: '**/*.xsd', excludes:'**/CG-DS-Comprehensive.xsd, **/CG-DS-Comprehensivety10.xsd, **/DataService*.xsd, **/fiinfo.xsd, **/GetAccounts*.xsd, **/registry.xsd, **/GetFiAccounts*.xsd, **/eFilingStatus*.xsd, **/taxidprotection/*.xs')
+        arg(value: "-Xannotate")
+        arg(value: "-Xannotate-defaultFieldTarget=setter")
+        arg(value: "-copy-constructor")
+        produces(dir: ttoSourcesDir, includes: '**/*.java')
+      }
+
+
+      taskdef name:'xmlbean', classname: 'org.apache.xmlbeans.impl.tool.XMLBean', classpath: configurations.xmlBeans.asPath
+
+      xmlbean(srcgendir: xmlbeansSourcesDir, javasource: '1.5', classpath: configurations.xmlBeans.asPath, destfile: "${buildDir}/generated-jar/xmlbeans.jar"){
+        fileset(dir:"${projectDir}/src/main/xsd/", includes:'**/*.xsd')
+      }
+    }
+  }
+}
+
+sourceSets {
+    main.java.srcDirs += dataserviceSourcesDir
+    main.java.srcDirs += dataserviceTY10SourcesDir
+    main.java.srcDirs += eFilingStatusSourcesDir
+    main.java.srcDirs += taxidProtectionSourcesDir
+    main.java.srcDirs += onlineFASourcesDir
+    main.java.srcDirs += ttoSourcesDir
+    main.java.srcDirs += xmlbeansSourcesDir
+    main.java.srcDirs += protoGrpcGeneratedSourcesDir
+    main.java.srcDirs += protoJavaGeneratedSourcesDir
+    main.java.srcDirs += annotationGeneratedSourcesDir
+    main.java.srcDirs += "${projectDir}/src/patch/java"
+}
+
+task testJar(type: Jar) {
+    classifier = 'tests'
+    from sourceSets.test
+}
+
+//Allow intellij to see generated files
+def protoGeneratedSourcesDir = file("${buildDir}/generated")
+
+def fileDataserviceSourcesDir = file(dataserviceSourcesDir)
+def fileDataserviceTY10SourcesDir = file(dataserviceTY10SourcesDir)
+def fileEFilingStatusSourcesDir = file(eFilingStatusSourcesDir)
+def fileTaxidProtectionSourcesDir = file(taxidProtectionSourcesDir)
+def fileOnlineFASourcesDir = file(onlineFASourcesDir)
+def fileTtoSourcesDir = file(ttoSourcesDir)
+def fileXmlbeansSourcesDir = file(xmlbeansSourcesDir)
+def fileProtoGrpcGeneratedSourcesDir = file(protoGrpcGeneratedSourcesDir)
+def fileProtoJavaGeneratedSourcesDir = file(protoJavaGeneratedSourcesDir)
+def fileAnnotationGeneratedSourcesDir = file(annotationGeneratedSourcesDir)
+
+idea {
+    module {
+        sourceDirs += fileDataserviceSourcesDir
+        sourceDirs += fileDataserviceTY10SourcesDir
+        sourceDirs += fileEFilingStatusSourcesDir
+        sourceDirs += fileTaxidProtectionSourcesDir
+        sourceDirs += fileTtoSourcesDir
+        sourceDirs += fileXmlbeansSourcesDir
+        sourceDirs += fileOnlineFASourcesDir
+        sourceDirs += fileProtoGrpcGeneratedSourcesDir
+        sourceDirs += fileProtoJavaGeneratedSourcesDir
+        sourceDirs += fileAnnotationGeneratedSourcesDir
+
+        generatedSourceDirs += fileDataserviceSourcesDir
+        generatedSourceDirs += fileDataserviceTY10SourcesDir
+        generatedSourceDirs += fileEFilingStatusSourcesDir
+        generatedSourceDirs += fileTaxidProtectionSourcesDir
+        generatedSourceDirs += fileTtoSourcesDir
+        generatedSourceDirs += fileXmlbeansSourcesDir
+        generatedSourceDirs += fileOnlineFASourcesDir
+        generatedSourceDirs += fileProtoGrpcGeneratedSourcesDir
+        generatedSourceDirs += fileProtoJavaGeneratedSourcesDir
+        generatedSourceDirs += fileAnnotationGeneratedSourcesDir
+    }
+}
+
+eclipse {
+  jdt {
+    file {
+      withProperties { properties ->
+        properties['org.eclipse.jdt.core.compiler.problem.forbiddenReference'] = 'warning'
+        properties['org.eclipse.jdt.core.formatter.blank_lines_between_import_groups'] = '0'
+      }
+    }
+  }
+}
+
+jar {
+  from genJaxb.classesDir
+}
+
+protobuf {
+  protoc {
+    // The artifact spec for the Protobuf Compiler
+    artifact = "com.google.protobuf:protoc:${protobufVersion}:"
+  }
+  plugins {
+    // Optional: an artifact spec for a protoc plugin, with "grpc" as
+    // the identifier, which can be referred to in the "plugins"
+    // container of the "generateProtoTasks" closure.
+    grpc {
+      artifact = "io.grpc:protoc-gen-grpc-java:${grpcVersion}"
+    }
+  }
+  generateProtoTasks {
+    ofSourceSet('main')*.plugins {
+      // Apply the "grpc" plugin whose spec is defined above, without
+      // options.  Note the braces cannot be omitted, otherwise the
+      // plugin will not be added. This is because of the implicit way
+      // NamedDomainObjectContainer binds the methods.
+      grpc { }
+    }
+  }
+}
+
+configurations.all {
+    resolutionStrategy {
+        force 'org.springframework:spring-expression:5.3.8'
+        force 'org.springframework:spring-context:5.3.8'
+        force 'com.fasterxml.jackson.core:jackson-databind:2.11.0'
+        force 'org.xerial.snappy:snappy-java:1.1.10.5'
+    }
+}
+
+dependencies {
+    ajc "org.aspectj:aspectjtools:1.8.7"
+
+    aspects "com.intuit.ctg.ttoplat.servo.monitor:intuit-monitor:0.0.4"
+    aspects "org.springframework:spring-aspects:5.3.8"
+
+    // IntelliJ has an issue getting this file :/
+    defaultPricing "com.intuit.ctg.ttoplat:default-pricing:latest.release@zip"
+
+    jaxb "javax.validation:validation-api:2.0.1.Final"
+    jaxb "org.hibernate:hibernate-validator:6.2.0.Final"
+    jaxb "org.jvnet.jaxb2_commons:jaxb2-basics-annotate:0.6.4"
+    jaxb "org.jvnet.jaxb2_commons:jaxb2-basics-ant:0.6.5"
+    jaxb "org.jvnet.jaxb2_commons:jaxb2-basics:0.6.4"
+    jaxb 'com.sun.xml.bind:jaxb-xjc:2.2.7'
+    jaxb 'net.sourceforge.ccxjc:cc-xjc-plugin:2.0.1'
+    jaxb 'org.apache.xmlbeans:xmlbeans:2.5.0'
+
+    protobuf files('../../TaxApp/Server/grpc/protos/')
+
+    xmlBeans 'org.glassfish.jaxb:jaxb-core:2.2.11'
+
+    compile(files(genJaxb.genDirs))
+    compile(files("${buildDir}/generated-jar/xmlbeans.jar"))
+    compile "io.github.resilience4j:resilience4j-retry:1.1.0"
+    compile group: 'io.vavr', name: 'vavr', version: '0.9.0'
+    compile(group: 'org.yaml', name: 'snakeyaml', version:'1.17')
+    compile "org.aspectj:aspectjrt:1.8.7"
+    compile "org.aspectj:aspectjweaver:1.8.7"
+    compile 'cmu_us_kal:cmu_us_kal:1.0'
+    compile 'cmulex:cmulex:1.0'
+    compile 'com.fasterxml.jackson.module:jackson-module-jaxb-annotations:2.8.10'
+    compile 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.8.10'
+    compile 'com.fasterxml:classmate:1.4.0'
+    compile 'com.flipkart.zjsonpatch:zjsonpatch:0.4.5'
+    compile 'com.google.code.gson:gson:2.8.2'
+    compile 'com.intuit.ctg.sp.service:ctds-interface:2.1.156'
+    compile('com.intuit.ctg.sp.service:entitlement-interface:1.1.149') {
+        exclude(group: 'com.intuit.githooks')
+    }
+    compile('com.intuit.ctg.sp.service:filing-archive-interface:2.0.139') {
+        exclude(group: 'com.intuit.githooks')
+    }
+    compile 'com.intuit.ctg.sp.service:filing-interface:2.1.186'
+    compile 'com.intuit.ctg.sp.service:returnlogic-interface:2.1.245'
+    compile 'com.intuit.platform.integration.oauth2:oauth2-do:5.0.6.10'
+    compile 'com.intuit.schema.platform.common.error:intuit-platform-error-v2:1.1.5'
+    compile 'com.intuit.tto:Auth:0.3'
+    compile 'com.intuit.tto:estore-authclient:1.10'
+    compile 'com.intuit.tto:hgen:2.0-SNAPSHOT'
+    compile 'com.intuit.tto:IamWsdlGenerated:3.16'
+    compile 'com.intuit.tto:wss4j:1.5.1'
+    compile 'com.intuit.tto:xmlsec:1.4.0'
+    compile 'com.intuit.tax.converter:mefpp-formml-converters:1.0.25'
+    compile 'com.sun.jersey.contribs:jersey-apache-client4:1.17.1'
+    compile 'commons-codec:commons-codec:1.7'
+    compile 'commons-collections:commons-collections:3.2.2'
+    compile 'commons-fileupload:commons-fileupload:1.3.3'
+    compile 'commons-io:commons-io:2.0.1'
+    compile 'en_us:en_us:1.0'
+    compile 'freetts:freetts:1.2.2'
+    compile 'io.github.openfeign:feign-core:9.7.0'
+    compile 'io.github.openfeign:feign-httpclient:9.7.0'
+    compile 'io.github.openfeign:feign-jaxb:9.7.0'
+    compile 'io.github.openfeign:feign-okhttp:9.7.0'
+    compile "io.grpc:grpc-protobuf:${grpcVersion}"
+    compile "io.grpc:grpc-stub:${grpcVersion}"
+    compile 'io.reactivex.rxjava2:rxjava:2.2.8'
+    compile 'io.springfox:springfox-swagger-ui:2.9.2'
+    compile 'javax.jws:jsr181-api:1.0-MR1'
+    compile 'javax.mail:mail:1.4.4'
+    compile 'javax.servlet:jstl:1.2'
+    compile 'jcaptcha:jcaptcha:1.0'
+    compile 'joda-time:joda-time:2.9.3'
+    compile 'org.apache.commons:commons-collections4:4.2'
+    compile 'org.apache.logging.log4j:log4j-1.2-api:2.17.1'
+    compile 'org.apache.logging.log4j:log4j-api:2.17.1'
+    compile 'org.apache.logging.log4j:log4j-core:2.17.1'
+    annotationProcessor 'org.apache.logging.log4j:log4j-core:2.17.1'
+    compile 'org.apache.logging.log4j:log4j-jcl:2.17.1'
+    compile 'org.apache.logging.log4j:log4j-jul:2.17.1'
+    compile 'org.apache.logging.log4j:log4j-slf4j-impl:2.17.1'
+    compile 'org.apache.xmlbeans:xmlbeans:3.0.0'
+    compile 'org.aspectj:aspectjrt:1.8.7'
+    compile 'org.aspectj:aspectjweaver:1.8.7'
+    compile 'org.bouncycastle:bcpkix-fips:1.0.5'
+    compile 'org.codehaus.groovy:groovy:2.4.8'
+    compile 'org.codehaus.jackson:jackson-core-asl:1.9.2'
+    compile 'org.codehaus.jackson:jackson-jaxrs:1.9.2'
+    compile 'org.codehaus.jackson:jackson-mapper-asl:1.9.2'
+    compile 'org.codehaus.jackson:jackson-xc:1.9.2'
+    compile 'org.eclipse.persistence:org.eclipse.persistence.moxy:2.3.4-M6'
+    compile 'org.freemarker:freemarker:2.3.30'
+    compile 'org.hibernate:hibernate-core:5.6.15.Final'
+    compile 'org.hsqldb:hsqldb:2.0.0'
+    compile 'org.json:json:20230227'
+    compile('com.github.everit-org.json-schema:org.everit.json.schema:1.12.1'){
+        exclude(module: 'json')
+    }
+    compile 'org.jvnet.annox:annox:0.5.0'
+    compile 'org.slf4j:slf4j-api:1.7.26'
+    compile 'org.slf4j:slf4j-ext:1.7.26'
+    compile 'org.springframework.cloud:spring-cloud-netflix-core:1.2.6.RELEASE'
+    compile 'org.springframework.security:spring-security-config:5.6.12'
+    compile 'org.springframework.security:spring-security-web:5.6.4'
+    compile 'org.springframework:spring-aop:5.3.18'
+    compile 'org.springframework:spring-aspects:5.3.8'
+    compile 'org.springframework:spring-orm:5.3.18'
+    compile 'org.springframework:spring-oxm:4.3.5.RELEASE'
+    compile 'org.springframework:spring-webmvc:5.3.26'
+    compile 'org.projectlombok:lombok:1.18.16'
+    compile 'spy:memcached:2.5'
+    compile 'xalan:serializer:2.7.1'
+    compile 'xalan:xalan:2.7.3'
+    compile 'xerces:xercesImpl:2.9.1'
+    compile 'org.mapstruct:mapstruct:1.4.2.Final'
+    annotationProcessor 'org.mapstruct:mapstruct-processor:1.4.2.Final'
+    compile group: 'org.springframework.kafka', name: 'spring-kafka', version: '1.3.11.RELEASE'
+    compile('junit:junit:4.12') {
+        exclude(module: 'hamcrest-core')
+    }
+    compile ('com.intuit.data.process:eventbus-core:1.6.3') {
+        exclude(group: 'commons-codec', module:'commons-codec')
+        exclude(group: 'org.mockito', module:'mockito-core')
+        exclude(group: 'org.springframework', module:'spring-web')
+        exclude(group: 'org.springframework', module:'spring-core')
+        exclude(group: 'org.springframework', module:'spring-beans')
+        exclude(group: 'com.intuit.idps')
+    }
+
+    compile ('com.intuit.data.process:eventbus-kafka:1.6.3') {
+        exclude(group: 'commons-codec', module:'commons-codec')
+        exclude(group: 'org.json', module:'json')
+        exclude(group: 'org.mockito', module:'mockito-core')
+        exclude(group: 'org.springframework', module:'spring-web')
+        exclude(group: 'org.springframework', module:'spring-core')
+        exclude(group: 'org.springframework', module:'spring-beans')
+        exclude(group: 'com.intuit.idps')
+    }
+    compile ('io.springfox:springfox-swagger2:2.9.2') {
+        exclude(module: 'jackson-annotations')
+    }
+    compile ('com.intuit.cto.general.libraries:cto-auth-utils:2.2.8'){
+        exclude(module: 'json')
+    }
+    compile("io.grpc:grpc-netty-shaded:${grpcVersion}") {
+        exclude(module: 'gson')
+    }
+    compile('io.github.openfeign:feign-slf4j:9.7.0') {
+        exclude(module: 'slf4j-api')
+    }
+    compile('io.github.openfeign:feign-jackson:9.7.0') {
+        exclude(module: 'jackson-databind')
+    }
+    compile('com.intuit.ctg.tto:auth-header-util:1.0.0') {
+    }
+    compile('com.netflix.servo:servo-core:0.12.16') {
+        exclude(module: 'slf4j-api')
+    }
+    compile('com.intuit.ctg.ttoplat.servo.monitor:intuit-monitor:0.0.4') {
+        exclude(module: 'slf4j-api')
+    }
+    compile('com.intuit.ctg.ttoplat:commerce-catalog-client:1.9.3') {
+        exclude(module: 'slf4j-log4j12')
+        exclude(module: 'slf4j-api')
+    }
+    compile('com.intuit.platform.integration.oauth2.client:oauth2-tokens-validation:5.2.1.64') {
+        exclude(module: 'log4j')
+        exclude(module: 'jaxb-api')
+    }
+    compile('com.fasterxml.jackson.core:jackson-databind:2.10.2') {
+        exclude(module: 'jackson-annotations')
+    }
+    compile('com.sun.xml.ws:jaxws-rt:2.1.4') {
+        exclude(module: 'junit')
+        exclude(module: 'jaxb-api')
+    }
+    compile('com.intuit.cg.commerce:client-shared-components:1.2') {
+        exclude(module: 'sok-models')
+        exclude(module: 'jackson-databind')
+        exclude(module: 'jackson-core')
+        exclude(module: 'jackson-annotations')
+        exclude(module: 'jackson-module-jaxb-annotations')
+        exclude(module: 'joda-time')
+        exclude(module: 'feign-core')
+    }
+    compile('org.hibernate:hibernate-validator:6.2.0.Final') {
+        exclude(module: 'jboss-logging')
+    }
+    compile('com.intuit.platform.components:api-lastmile:3.0.4') {
+        exclude(module: 'junit')
+    }
+    compile('com.intuit.cfp.sp.external:iam-rest-client-java6:1.1.7.7') {
+        exclude(module: 'aspectjrt')
+        exclude(module: 'aspectjweaver')
+        exclude(module: 'slf4j-log4j12')
+        exclude(module: 'log4j')
+        exclude(module: 'slf4j-api')
+        exclude(module: 'org.eclipse.persistence.moxy')
+    }
+    compile('com.intuit.tto:axis-connection-util:2.1.0') {
+        exclude(module: 'commons-logging')
+    }
+    compile('commons-discovery:commons-discovery:0.2') {
+        exclude(module: 'commons-logging')
+    }
+    compile('commons-beanutils:commons-beanutils:1.7.0') {
+        exclude(module: 'commons-logging')
+    }
+    compile('commons-validator:commons-validator:1.4.0') {
+        exclude(module: 'commons-logging')
+    }
+    compile('com.intuit.tto:encryption:2.1.0') {
+        exclude(module: 'commons-logging')
+        exclude(module: 'log4j')
+    }
+    compile('net.sf.dozer:dozer:5.5.1') {
+        exclude(module: 'slf4j-log4j12')
+        exclude(module: 'jcl-over-slf4j')
+        exclude(module: 'slf4j-api')
+    }
+    compile('com.amazonaws:aws-java-sdk:1.11.228') {
+        exclude(module: 'jackson-databind')
+        exclude(module: 'jackson-core')
+        exclude(module: 'joda-time')
+        exclude(module: 'aws-java-sdk-simpleworkflow')
+        exclude(module: 'commons-logging')
+    }
+    compile('com.netflix.hystrix:hystrix-core:1.5.3') {
+        exclude(module: 'commons-logging')
+        exclude(module: 'slf4j-api')
+    }
+    compile('com.netflix.hystrix:hystrix-metrics-event-stream:1.5.3') {
+        exclude(module: 'jackson-core')
+    }
+    compile('commons-httpclient:commons-httpclient:3.1') {
+        exclude(module: 'commons-logging')
+    }
+    compile('com.intuit.tto:tto-httpclientwrapper:2.1.0') {
+        exclude(module: 'commons-logging')
+        exclude(module: 'log4j')
+    }
+    compile('com.intuit.tto:tto-configurator:2.1.0') {
+        exclude(module: 'commons-logging')
+        exclude(module: 'log4j')
+    }
+    compile('com.intuit.spc.whp:bhp-auth-valve:1.2.0.1') {
+        exclude(module: 'jaxb-api')
+    }
+    compile('com.intuit.idps:idps-sdk:3.92.1') {
+        exclude(module: 'okhttp')
+        exclude(module: 'okio')
+        exclude(module: 'jackson-databind')
+        exclude(module: 'gson')
+        exclude(module: 'slf4j-api')
+    }
+    compile('com.squareup.okhttp:okhttp:2.7.5') {
+        exclude(module: 'okio')
+    }
+    compile('com.intuit.platform.oil:log4i-ext-log4j2:3.0.5-RELEASE') {
+        exclude(module: 'junit')
+        exclude(module: 'jackson-databind')
+        exclude(module: 'log4j-core')
+    }
+    compile('com.intuit.platform.oil:log4i-spring-web-servlet-interceptor:3.0.5-RELEASE') {
+        exclude(module: 'junit')
+        exclude(module: 'jackson-databind')
+    }
+    compile('com.intuit.platform.oil:log4i-httpClient-interceptors:3.0.5-RELEASE') {
+        exclude(module: 'junit')
+    }
+    compile('com.intuit.platform.oil:log4i-spring-resttemplate-interceptor:3.0.5-RELEASE') {
+        exclude(module: 'junit')
+    }
+    compile("com.intuit.identity.authn:authn-java-sdk:1.0.0.46") {
+        exclude(module: 'jackson-databind')
+    }
+    compile('com.intuit.cg.turbotax:cas-client-library:1.3.0') {
+        exclude(module: 'jackson-annotations')
+        exclude(module: 'jackson-databind')
+    }
+
+    compile ('com.intuit.identity.authz:authz-java-sdk:2.2.0.22') {
+        exclude(module: 'jackson-databind')
+    }
+
+    compile('com.intuit.ctg.sp.service:filing-interface:2.1.219')
+
+    compile('org.apache.velocity:velocity-engine-core:2.2')
+    compile('org.apache.velocity.tools:velocity-tools-generic:3.0')
+    compile('com.jayway.jsonpath:json-path:2.8.0')
+
+    compile('com.apollographql.apollo:apollo-api:1.4.0')
+    compile('org.jetbrains:annotations:22.0.0')
+    
+    compile('com.intuit.platform:entitlement-sdk:1.0.60') {
+        exclude(module: 'log4j-to-slf4j')
+        exclude(module: 'spring-web')
+        exclude(module: 'spring-webmvc')
+        exclude(module: 'tomcat-embed-el')
+        exclude(group: 'com.fasterxml.jackson.dataformat')
+        exclude(group: 'com.intuit.sb.api')
+        exclude(group: 'com.fasterxml.jackson.*')
+        exclude(group: 'org.json', module:'json')
+        exclude(module: 'logback-classic')
+        exclude(module: 'slf4j-jdk14')
+    }
+
+    compile('org.glassfish.jersey.core:jersey-common:2.22.2')
+
+    compile('com.intuit.global_internationa.translation_cache:translation_cache:1.0.12') {
+        exclude(module: 'mockito-core')
+        exclude(module: 'slf4j-api')
+        exclude(module: 'commons-logging')
+    }
+
+    testCompile(files("${buildDir}/generated-jar/xmlbeans.jar"))
+    testCompile('com.jayway.jsonpath:json-path:1.1.0')
+    testCompile 'com.jayway.jsonpath:json-path-assert:0.9.1'
+    testCompile 'io.github.openfeign:feign-mock:9.7.0'
+    testCompile 'org.assertj:assertj-core:3.11.1'
+    testCompile 'org.easymock:easymock:3.5.1'
+    testCompile 'org.easymock:easymockclassextension:3.2'
+    testCompile 'org.glassfish.jaxb:jaxb-core:2.3.0'
+    testCompile 'org.glassfish:javax.el:3.0.0'
+    testCompile 'org.hamcrest:hamcrest-all:1.3'
+    testCompile 'org.mockito:mockito-core:2.0.3-beta'
+    testCompile 'org.springframework:spring-test:5.3.8'
+    testCompile('org.powermock:powermock-module-junit4:1.7.4') {
+        exclude(module: 'junit')
+        exclude(module: 'mockito-core')
+    }
+    testCompile('org.powermock:powermock-api-mockito:1.7.4'){
+        exclude(module: 'mockito-core')
+    }
+    testCompile('junit:junit:4.12') {
+        exclude(module: 'hamcrest-core')
+    }
+    testCompile('com.github.tomakehurst:wiremock:2.19.0') {
+        exclude(module: 'jackson-core')
+        exclude(module: 'jackson-annotations')
+        exclude(module: 'jackson-databind')
+        exclude(module: 'junit')
+        exclude(module: 'slf4j-api')
+        exclude(module: 'json-path')
+    }
+    testCompile('com.intuit.cfp.sp.library:cfp-utils:2.2.7') {
+        exclude(module: 'json')
+        exclude(module: 'log4j')
+    }
+    testCompile('org.powermock:powermock-api-easymock:1.7.4') {
+        exclude(module: 'javassist')
+        exclude(module: 'mockito-core')
+    }
+
+    providedCompile 'javax.servlet:javax.servlet-api:3.1.0'
+    providedCompile 'javax.el:javax.el-api:3.0.0'
+    providedCompile 'javax.servlet.jsp:jsp-api:2.2'
+    providedCompile 'javax.persistence:persistence-api:1.0'
+
+    // Needed by Gradle 5 to process Immutables annotations
+    annotationProcessor 'org.immutables:value:2.7.1'
+    annotationProcessor 'org.projectlombok:lombok:1.18.16'
+    providedCompile 'org.immutables:value:2.7.1'
+
+}
+
+test {
+    // set heap size for the test JVM(s)
+    minHeapSize = "768m"
+    maxHeapSize = "768m"
+
+    // set JVM arguments for the test JVM(s)
+    jvmArgs '-XX:MaxPermSize=512m'
+    systemProperty "OLT_EnvPath", System.getenv('DEVROOT')+"Src/web/spring/src/test/resources"
+    filter {
+        excludeTestsMatching "CgcsRestTemplateClientIT"
+        excludeTestsMatching "DefaultCommerceOrchestrationClientIT"
+    }
+}
+
+task format(type: GoogleJavaFormat) {
+  source 'src/main'
+  source 'src/test'
+  include '**/*.java'
+  exclude '**/*Template.java'
+}
+
+task verifyFormatting(type: VerifyGoogleJavaFormat) {
+  source 'src/main'
+  include '**/*.java'
+  ignoreFailures false
+}
+
+//Needed?
+task packageTests(type: Jar) {
+  from sourceSets.test.output
+  classifier = 'tests'
+}
+
+task getDefaultPricing(type: Copy) {
+  into 'src/main/resources/properties/'
+  from configurations.defaultPricing.collect{zipTree (it)}
+  fileMode 0755
+}
+
+task untarUiDataBindings(type: Copy) {
+    from tarTree("${buildscript.sourceFile.getParent()}/../../../ThrdPrty/binding/uidatabinding.tar.gz")
+    into "${buildDir}"
+    fileMode 0644
+}
+
+def aspectj = { destDir, aspectPath, inpath, classpath ->
+    ant.taskdef(resource: "org/aspectj/tools/ant/taskdefs/aspectjTaskdefs.properties",
+            classpath: configurations.ajc.asPath)
+
+    ant.iajc(
+            maxmem: "4g", fork: "true", Xlint: "ignore",
+            destDir: destDir,
+            aspectPath: aspectPath,
+            inpath: inpath,
+            classpath: classpath,
+            source: project.sourceCompatibility,
+            target: project.targetCompatibility
+    )
+}
+
+compileJava {
+    options.annotationProcessorGeneratedSourcesDirectory = file("${buildDir}/generated-sources/annotations")
+
+    doLast {
+        aspectj project.sourceSets.main.output.getClassesDirs().getAsPath(),
+                configurations.aspects.asPath,
+                project.sourceSets.main.output.getClassesDirs().getAsPath(),
+                project.sourceSets.main.runtimeClasspath.asPath
+    }
+}
+
+compileTestJava {
+    dependsOn jar
+
+    doLast {
+        aspectj project.sourceSets.test.output.getClassesDirs().getAsPath(),
+                configurations.aspects.asPath + jar.archivePath,
+                project.sourceSets.test.output.getClassesDirs().getAsPath(),
+                project.sourceSets.test.runtimeClasspath.asPath
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+genJaxb.dependsOn(verifyFormatting)
+compileJava.dependsOn(genJaxb)
+compileJava.dependsOn(getDefaultPricing)
+compileJava.dependsOn(untarUiDataBindings)
+
+artifacts.archives packageTests
+
